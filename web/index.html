@@ -34,13 +34,13 @@
     <div id="events-tab" class="tab-content active">
         <h2>Events List</h2>
         <div id="events-list">
-            <!-- Events will be loaded here -->
-        </div>
+                <!-- Events will be loaded here -->
+            </div>
     </div>
 
     <div id="create-tab" class="tab-content">
         <h2>Create Event</h2>
-        <form id="create-event-form" hx-post="/events" hx-target="#events-list">
+        <form id="create-event-form">
             <div class="form-group">
                 <label>Event Name:</label>
                 <input type="text" name="name" required>
@@ -57,7 +57,7 @@
                 <label>Payment Time (minutes):</label>
                 <input type="number" name="payment_time" value="30">
             </div>
-            <button type="submit">Create Event</button>
+            <button type="button" onclick="createEvent()">Create Event</button>
         </form>
     </div>
 
@@ -78,7 +78,7 @@
             </div>
             <button type="button" onclick="bookSeats()">Book Seats</button>
         </form>
-        <div id="booking-result"></div>
+            <div id="booking-result"></div>
     </div>
 
     <div id="confirm-tab" class="tab-content">
@@ -99,6 +99,164 @@
 </div>
 
 <script>
+
+    // Load events on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadEvents();
+    });
+
+    async function loadEvents() {
+        try {
+            const res = await fetch('/events');
+            if (!res.ok) {
+                const txt = await res.text();
+                throw new Error(txt || `Failed to load events: ${res.status}`);
+            }
+            const events = await res.json();
+
+            if (!Array.isArray(events) || events.length === 0) {
+                document.getElementById('events-list').innerHTML = '<p>No events found.</p>';
+                return;
+            }
+
+            const eventsHtml = events.map(event => `
+                <div class="event">
+                    <h3>${escapeHtml(event.name)}</h3>
+                    <p><strong>Date:</strong> ${new Date(event.date).toLocaleString()}</p>
+                    <p><strong>Total Seats:</strong> ${event.total_seats}</p>
+                    <p><strong>Available Seats:</strong> ${event.available_seats}</p>
+                    <p><strong>Payment Time:</strong> ${event.payment_time} minutes</p>
+                    <p><strong>Event ID:</strong> ${event.id}</p>
+                    <div style="display:flex; gap:8px; margin-top:8px;">
+                        <button type="button" onclick="prefillBook(${event.id})">Book</button>
+                        <button type="button" onclick="prefillConfirm(${event.id})">Confirm</button>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('events-list').innerHTML = eventsHtml;
+        } catch (error) {
+            console.error('Error loading events:', error);
+            document.getElementById('events-list').innerHTML = `<p>Error loading events: ${escapeHtml(String(error.message))}</p>`;
+        }
+    }
+
+    function createEvent() {
+        const form = document.getElementById('create-event-form');
+        const formData = new FormData(form);
+        
+        const eventData = {
+            name: formData.get('name'),
+            date: new Date(formData.get('date')).toISOString(),
+            total_seats: parseInt(formData.get('total_seats')),
+            payment_time: parseInt(formData.get('payment_time'))
+        };
+        (async () => {
+            try {
+                const res = await fetch('/events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(eventData),
+                });
+
+                if (!res.ok) {
+                    const txt = await res.text();
+                    throw new Error(txt || `Failed to create event: ${res.status}`);
+                }
+
+                const data = await res.json();
+                alert('Event created successfully! (ID: ' + data.id + ')');
+                form.reset();
+                loadEvents();
+                showTab('events');
+            } catch (error) {
+                console.error('Error creating event:', error);
+                alert('Error creating event: ' + (error.message || error));
+            }
+        })();
+    }
+
+    function bookSeats() {
+        const form = document.getElementById('book-form');
+        const formData = new FormData(form);
+        const eventId = formData.get('event_id');
+
+        const bookingData = {
+            user_name: formData.get('user_name'),
+            seats: parseInt(formData.get('seats'))
+        };
+        (async () => {
+            try {
+                const res = await fetch(`/events/${eventId}/book`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bookingData),
+                });
+
+                if (!res.ok) {
+                    const txt = await res.text();
+                    throw new Error(txt || `Booking failed: ${res.status}`);
+                }
+
+                const data = await res.json();
+                document.getElementById('booking-result').innerHTML = `
+                    <div class="booking pending">
+                        <h4>Booking Successful!</h4>
+                        <p><strong>Booking ID:</strong> ${data.id}</p>
+                        <p><strong>User:</strong> ${escapeHtml(data.user_name)}</p>
+                        <p><strong>Seats:</strong> ${data.seats}</p>
+                        <p><strong>Status:</strong> ${escapeHtml(data.status)}</p>
+                        <p><em>Please confirm your booking within the payment time limit.</em></p>
+                    </div>
+                `;
+                loadEvents();
+                showTab('confirm');
+                // Prefill confirm form
+                prefillConfirm(eventId);
+            } catch (error) {
+                console.error('Error booking seats:', error);
+                document.getElementById('booking-result').innerHTML = `<p>Error booking seats: ${escapeHtml(String(error.message))}</p>`;
+            }
+        })();
+    }
+
+    function confirmBooking() {
+        const form = document.getElementById('confirm-form');
+        const formData = new FormData(form);
+        const eventId = formData.get('event_id');
+
+        const confirmData = {
+            user_name: formData.get('user_name')
+        };
+        (async () => {
+            try {
+                const res = await fetch(`/events/${eventId}/confirm`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(confirmData),
+                });
+
+                if (!res.ok) {
+                    const txt = await res.text();
+                    throw new Error(txt || `Confirm failed: ${res.status}`);
+                }
+
+                const data = await res.json();
+                document.getElementById('confirmation-result').innerHTML = `
+                    <div class="booking confirmed">
+                        <h4>Booking Confirmed!</h4>
+                        <p><strong>Status:</strong> ${escapeHtml(data.status)}</p>
+                        <p>Your booking has been successfully confirmed.</p>
+                    </div>
+                `;
+                loadEvents();
+            } catch (error) {
+                console.error('Error confirming booking:', error);
+                document.getElementById('confirmation-result').innerHTML = `<p>Error confirming booking: ${escapeHtml(String(error.message))}</p>`;
+            }
+        })();
+    }
+
+    // Handle tab switching properly
     function showTab(tabName) {
         // Hide all tabs
         document.querySelectorAll('.tab-content').forEach(tab => {
@@ -110,59 +268,44 @@
 
         // Show selected tab
         document.getElementById(tabName + '-tab').classList.add('active');
-        event.target.classList.add('active');
-    }
-
-    // Load events on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        loadEvents();
-    });
-
-    function loadEvents() {
-        htmx.ajax('GET', '/events', '#events-list');
-    }
-
-    function bookSeats() {
-        const form = document.getElementById('book-form');
-        const formData = new FormData(form);
-        const eventId = formData.get('event_id');
-
-        htmx.ajax('POST', `/events/${eventId}/book`, {
-            values: {
-                user_name: formData.get('user_name'),
-                seats: parseInt(formData.get('seats'))
-            },
-            target: '#booking-result',
-            swap: 'innerHTML'
-        }).then(() => {
-            loadEvents(); // Reload events list after booking
-        });
-    }
-
-    function confirmBooking() {
-        const form = document.getElementById('confirm-form');
-        const formData = new FormData(form);
-        const eventId = formData.get('event_id');
-
-        htmx.ajax('POST', `/events/${eventId}/confirm`, {
-            values: {
-                user_name: formData.get('user_name')
-            },
-            target: '#confirmation-result',
-            swap: 'innerHTML'
-        }).then(() => {
-            loadEvents(); // Reload events list after confirmation
-        });
-    }
-
-    // Reset form after successful submission
-    document.addEventListener('htmx:afterRequest', function(evt) {
-        if (evt.detail.successful) {
-            if (evt.detail.target.id === 'events-list') {
-                document.getElementById('create-event-form').reset();
+        
+        // Find and activate the corresponding tab button
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach((tab, index) => {
+            if ((tabName === 'events' && index === 0) ||
+                (tabName === 'create' && index === 1) ||
+                (tabName === 'book' && index === 2) ||
+                (tabName === 'confirm' && index === 3)) {
+                tab.classList.add('active');
             }
-        }
-    });
+        });
+    }
+
+    // Prefill helpers for easier UX
+    function prefillBook(eventId) {
+        showTab('book');
+        const form = document.getElementById('book-form');
+        form.elements['event_id'].value = eventId;
+        document.getElementById('booking-result').innerHTML = '';
+    }
+
+    function prefillConfirm(eventId) {
+        showTab('confirm');
+        const form = document.getElementById('confirm-form');
+        form.elements['event_id'].value = eventId;
+        document.getElementById('confirmation-result').innerHTML = '';
+    }
+
+    // Small helper to escape HTML when injecting strings
+    function escapeHtml(unsafe) {
+        if (unsafe === null || unsafe === undefined) return '';
+        return String(unsafe)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+    }
 </script>
 </body>
 </html>

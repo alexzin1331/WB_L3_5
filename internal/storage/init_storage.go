@@ -16,6 +16,10 @@ import (
 func InitDB(cfg *models.Config) (*pgxpool.Pool, error) {
 	const op = "storage.initDB"
 
+	log.Printf("%s: Initializing database connection", op)
+	log.Printf("%s: Connecting to database at %s:%s/%s as user %s",
+		op, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name, cfg.Database.User)
+
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		cfg.Database.User,
 		cfg.Database.Password,
@@ -26,25 +30,40 @@ func InitDB(cfg *models.Config) (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
+		log.Printf("%s: Failed to create connection pool: %v", op, err)
 		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
+	log.Printf("%s: Database connection pool created successfully", op)
+
+	// Test connection
+	if err := pool.Ping(context.Background()); err != nil {
+		log.Printf("%s: Failed to ping database: %v", op, err)
+		return nil, fmt.Errorf("%s: %v", op, err)
+	}
+
+	log.Printf("%s: Database connection verified", op)
+
 	// Run migrations
+	log.Printf("%s: Starting database migrations", op)
 	m, err := migrate.New("file://migrations", dsn)
 	if err != nil {
+		log.Printf("%s: Failed to create migration instance: %v", op, err)
 		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Printf("%s: Failed to apply migrations: %v", op, err)
 		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
 	version, dirty, err := m.Version()
 	if err != nil && err != migrate.ErrNilVersion {
+		log.Printf("%s: Failed to get migration version: %v", op, err)
 		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
-	log.Printf("Migrations applied successfully. Version: %d, Dirty: %t", version, dirty)
+	log.Printf("%s: Migrations applied successfully. Version: %d, Dirty: %t", op, version, dirty)
 
 	return pool, nil
 }

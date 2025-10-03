@@ -1,12 +1,3 @@
-CREATE TABLE events (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    date TIMESTAMP NOT NULL,
-    total_seats INTEGER NOT NULL,
-    payment_time INTEGER NOT NULL DEFAULT 30,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE bookings (
     id SERIAL PRIMARY KEY,
     event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
